@@ -39,7 +39,11 @@ jobs:
       - name: 🎨 Style
         run: brew style tashtit/tap
 
+      # --online asks the GitHub API about the release; a shared runner IP runs out of
+      # anonymous calls, so it asks as this job's read-only token
       - name: 🔍 Audit
+        env:
+          HOMEBREW_GITHUB_API_TOKEN: '${{ github.token }}'
         run: brew audit --strict --online --tap tashtit/tap
 
       - name: 🍺 Install and uninstall
