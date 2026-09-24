@@ -24,9 +24,9 @@ jobs:
     permissions:
       contents: 'write' # to commit the new version to main
     steps:
-      # keeps its credentials: the bump is pushed with them
       - name: Checkout
         uses: actions/checkout@v7.0.1
+        with: { persist-credentials: true } # the Commit step pushes with them
 
       - name: 🍺 Point the cask at the latest release
         id: bump

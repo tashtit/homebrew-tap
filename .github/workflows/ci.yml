@@ -1,0 +1,54 @@
+name: 'CI'
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: '${{ github.workflow }}-${{ github.ref }}'
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # Style, audit and a real install of every cask, on macOS because casks are
+  # macOS-only. The install is the one check that proves the sandboxed
+  # postflight step actually clears the quarantine flag.
+  cask:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    permissions:
+      contents: 'read' # for actions/checkout
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+        with: { persist-credentials: false }
+
+      # The runner's Homebrew can be a few weeks old; the cask uses Homebrew 7 stanzas.
+      - name: Update Homebrew
+        run: brew update
+
+      # Load this checkout as tashtit/tap, and trust it so Homebrew will evaluate it.
+      - name: Tap the checkout
+        run: |
+          taps="$(brew --repository)/Library/Taps/tashtit"
+          mkdir -p "${taps}"
+          ln -sfn "${GITHUB_WORKSPACE}" "${taps}/homebrew-tap"
+          brew trust tashtit/tap
+
+      - name: 🎨 Style
+        run: brew style tashtit/tap
+
+      - name: 🔍 Audit
+        run: brew audit --strict --online --tap tashtit/tap
+
+      - name: 🍺 Install and uninstall
+        run: |
+          brew install --cask tashtit/tap/cockpit
+          test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' /Applications/Cockpit.app/Contents/Info.plist)" = dev.tashtit.cockpit
+          if xattr -p com.apple.quarantine /Applications/Cockpit.app 2>/dev/null; then
+            echo "::error::Cockpit.app still carries the quarantine flag"
+            exit 1
+          fi
+          brew uninstall --zap --cask tashtit/tap/cockpit
+          test ! -e /Applications/Cockpit.app
