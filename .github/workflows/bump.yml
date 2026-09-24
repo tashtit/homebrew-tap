@@ -1,0 +1,74 @@
+name: 'Bump'
+
+# Keeps Casks/cockpit.rb on the newest Cockpit release. Once installed, Cockpit updates
+# itself (the cask says `auto_updates true`), so this only decides which version a fresh
+# `brew install` starts from — an hour behind a release at most.
+#
+# It polls tashtit/cockpit's public releases rather than being triggered by them, so
+# that repository needs no token that can write here; the commit is made with this
+# repository's own GITHUB_TOKEN. Each asset's sha256 is the digest GitHub recorded
+# when the release workflow uploaded it — a release without one is refused.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 * * * *'
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: 'write' # to commit the new version to main
+    steps:
+      # keeps its credentials: the bump is pushed with them
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      - name: 🍺 Point the cask at the latest release
+        id: bump
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          release="$(gh api repos/tashtit/cockpit/releases/latest)"
+          version="$(jq -r '.tag_name | ltrimstr("v")' <<<"$release")"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::unexpected release tag: $(jq -r .tag_name <<<"$release")"
+            exit 1
+          fi
+          digest() {
+            jq -r --arg name "Cockpit-${version}-$1.dmg" \
+              '.assets[] | select(.name == $name) | .digest // "" | ltrimstr("sha256:")' <<<"$release"
+          }
+          arm="$(digest arm64)"
+          intel="$(digest x64)"
+          for sha in "$arm" "$intel"; do
+            if ! [[ "$sha" =~ ^[0-9a-f]{64}$ ]]; then
+              echo "::error::v${version} has no sha256 digest for one of its disk images"
+              exit 1
+            fi
+          done
+          sed -i -E \
+            -e "s/^  version \"[^\"]*\"/  version \"${version}\"/" \
+            -e "s/^  sha256 arm:   \"[0-9a-f]*\",/  sha256 arm:   \"${arm}\",/" \
+            -e "s/^         intel: \"[0-9a-f]*\"/         intel: \"${intel}\"/" \
+            Casks/cockpit.rb
+          grep -q "version \"${version}\"" Casks/cockpit.rb && grep -q "$arm" Casks/cockpit.rb && grep -q "$intel" Casks/cockpit.rb
+          ruby -c Casks/cockpit.rb
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Commit
+        env:
+          VERSION: ${{ steps.bump.outputs.version }}
+        run: |
+          if git diff --quiet; then
+            echo "Already on ${VERSION}."
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -am "chore(cockpit): bump to ${VERSION}"
+          git push
