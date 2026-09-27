@@ -1,9 +1,9 @@
 cask "cockpit" do
   arch arm: "arm64", intel: "x64"
 
-  version "0.45.0"
-  sha256 arm:   "8963a4152c687772d90419f9572b0bbb1242d861bf544bef78adc4d880423e68",
-         intel: "f80d8c1821207873d628f66d5ce0f299e064792a2ec67f0a6773a5996be113a7"
+  version "0.47.0"
+  sha256 arm:   "832dea971cd4b53df77e9182ef09bf678915cccb59a8dade401a6d06440f5294",
+         intel: "2925b0cf06a451c257701a47b1a4023e6b50f9c2e55d067c268dd6d4095c2593"
 
   url "https://github.com/tashtit/cockpit/releases/download/v#{version}/Cockpit-#{version}-#{arch}.dmg"
   name "Cockpit"
